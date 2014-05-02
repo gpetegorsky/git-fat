@@ -239,3 +239,5 @@ will be available in all repositories without extra copies. You still need to
 * Gracefully handle unmanaged files when the filter is called (either
   legacy files or files matching the pattern that should some reason not
   be treated as fat).
+
+TEST
