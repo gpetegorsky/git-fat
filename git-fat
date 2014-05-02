@@ -135,6 +135,12 @@ class GitFat(object):
         self.magiclens = [magiclen(enc) for enc in [self.encode_v1, self.encode_v2]] # All prior versions
     def setup(self):
         mkdir_p(self.objdir)
+
+    def is_initialized(self):
+        if gitconfig_get('filter.fat.clean') or gitconfig_get('filter.fat.smudge'):
+            return True
+        return False
+
     def get_rsync(self):
         cfgpath   = os.path.join(self.gitroot,'.gitfat')
         remote    = gitconfig_get('rsync.remote', file=cfgpath)
@@ -259,10 +265,16 @@ class GitFat(object):
         The clean filter runs when a file is added to the index. It gets the "smudged" (tree)
         version of the file on stdin and produces the "clean" (repository) version on stdout.
         '''
+        if not self.is_initialized():
+            print('Git fat not initialized')
+            return
         self.setup()
         self.filter_clean(sys.stdin, sys.stdout)
 
     def cmd_filter_smudge(self):
+        if not self.is_initialized():
+            print('Git fat not initialized')
+            return
         self.setup()
         result, bytes = self.decode_stream(sys.stdin)
         if isinstance(result, str):       # We got a digest
@@ -313,6 +325,9 @@ class GitFat(object):
                 yield (digest, fname)
 
     def cmd_status(self, args):
+        if not self.is_initialized():
+            print('Git fat not initialized')
+            return
         self.setup()
         catalog = self.catalog_objects()
         refargs = dict()
@@ -332,10 +347,15 @@ class GitFat(object):
             print('Garbage objects:')
             for g in garbage:
                 print('    ' + g)
+
     def is_dirty(self):
         return subprocess.call(['git', 'diff-index', '--quiet', 'HEAD']) == 0
+
     def cmd_push(self, args):
         'Push anything that I have stored and referenced'
+        if not self.is_initialized():
+            print('Git fat not initialized')
+            return
         self.setup()
         # Default to push only those objects referenced by current HEAD
         # (includes history). Finer-grained pushing would be useful.
@@ -345,8 +365,12 @@ class GitFat(object):
         self.verbose('Executing: %s' % ' '.join(cmd))
         p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         p.communicate(input='\x00'.join(files))
+
     def checkout(self, show_orphans=False):
         'Update any stale files in the present working tree'
+        if not self.is_initialized():
+            print('Git fat not initialized')
+            return
         for digest, fname in self.orphan_files():
             objpath = os.path.join(self.objdir, digest)
             if os.access(objpath, os.R_OK):
@@ -362,8 +386,12 @@ class GitFat(object):
                 subprocess.check_call(['git', 'checkout-index', '--index', '--force', fname])
             elif show_orphans:
                 print('Data unavailable: %s %s' % (digest,fname))
+
     def cmd_pull(self, args):
         'Pull anything that I have referenced, but not stored'
+        if not self.is_initialized():
+            print('Git fat not initialized')
+            return
         self.setup()
         refargs = dict()
         if '--all' in args:
@@ -398,23 +426,31 @@ class GitFat(object):
         return files & orphans_objects
 
     def cmd_checkout(self, args):
+        if not self.is_initialized():
+            print('Git fat not initialized')
+            return
         self.checkout(show_orphans=True)
 
     def cmd_gc(self):
+        if not self.is_initialized():
+            print('Git fat not initialized')
+            return
         garbage = self.catalog_objects() - self.referenced_objects()
         print('Unreferenced objects to remove: %d' % len(garbage))
         for obj in garbage:
             fname = os.path.join(self.objdir, obj)
             print('%10d %s' % (os.stat(fname).st_size, obj))
             os.remove(fname)
+
     def cmd_init(self):
         self.setup()
-        if gitconfig_get('filter.fat.clean') or gitconfig_get('filter.fat.smudge'):
+        if self.is_initialized():
             print('Git fat already configured, check configuration in .git/config')
         else:
             gitconfig_set('filter.fat.clean', 'git-fat filter-clean')
             gitconfig_set('filter.fat.smudge', 'git-fat filter-smudge')
             print('Initialized git fat')
+
     def gen_large_blobs(self, revs, threshsize):
         """Build dict of all blobs"""
         time0 = time.time()
@@ -445,7 +481,11 @@ class GitFat(object):
         hashonly.join()
         time1 = time.time()
         self.verbose('%d of %d blobs are >= %d bytes [elapsed %.3fs]' % (numlarge, numblobs, threshsize, time1-time0))
+
     def cmd_find(self, args):
+        if not self.is_initialized():
+            print('Git fat not initialized')
+            return
         maxsize = int(args[0])
         blobsizes = dict(self.gen_large_blobs('--all', maxsize))
         time0 = time.time()
@@ -465,7 +505,11 @@ class GitFat(object):
             print('%-*s filter=fat -text # %10d %d' % (maxlen, path,max(sizes),len(sizes)))
         revlist.wait()
         difftree.wait()
+
     def cmd_index_filter(self, args):
+        if not self.is_initialized():
+            print('Git fat not initialized')
+            return
         manage_gitattributes = '--manage-gitattributes' in args
         filelist = set(f.strip() for f in open(args[0]).readlines())
         lsfiles = subprocess.Popen(['git', 'ls-files', '-s'], stdout=subprocess.PIPE)
